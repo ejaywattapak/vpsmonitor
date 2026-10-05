@@ -5,74 +5,64 @@ BASE="/opt/vps-monitor"
 RAW="https://raw.githubusercontent.com/ejaywattapak/vpsmonitor/main"
 INSTALLER_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 
-CYAN='\033[1;36m'; GREEN='\033[1;32m'; RED='\033[1;31m'
-YELLOW='\033[1;33m'; WHITE='\033[1;37m'; RESET='\033[0m'
-
-cleanup() {
-    # Remove only the temporary installer downloaded to run this installation.
-    # Never remove the installed application/configuration.
-    if [[ -n "${INSTALLER_PATH:-}" && -f "$INSTALLER_PATH" && "$INSTALLER_PATH" != "$BASE/installer.sh" ]]; then
-        rm -f -- "$INSTALLER_PATH"
-    fi
-    clear 2>/dev/null || true
-}
-trap cleanup EXIT
+CYAN='\033[1;36m'
+GREEN='\033[1;32m'
+RED='\033[1;31m'
+YELLOW='\033[1;33m'
+RESET='\033[0m'
 
 die() {
     echo -e "${RED}✗ $1${RESET}"
     exit 1
 }
 
+cleanup() {
+    # Delete only the temporary installer downloaded from GitHub.
+    # Installed monitor files and credentials are kept.
+    if [[ -n "${INSTALLER_PATH:-}" && -f "$INSTALLER_PATH" && "$INSTALLER_PATH" != "$BASE/installer.sh" ]]; then
+        rm -f -- "$INSTALLER_PATH"
+    fi
+}
+trap cleanup EXIT
+
 [[ $EUID -eq 0 ]] || die "Run this installer as root."
-command -v curl >/dev/null || {
-    apt-get update -y
-    apt-get install -y curl
-}
-command -v python3 >/dev/null || {
-    apt-get update -y
-    apt-get install -y python3
-}
-command -v ping >/dev/null || {
-    apt-get update -y
-    apt-get install -y iputils-ping
-}
-command -v wget >/dev/null || {
-    apt-get update -y
-    apt-get install -y wget
-}
+
+echo -e "${CYAN}Checking required packages...${RESET}"
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y curl wget python3 iputils-ping
 
 clear
 echo -e "${CYAN}"
 cat <<'EOF'
 ╔══════════════════════════════════════════════════════════╗
 ║                                                          ║
-║                 EJ-VPS MONITOR                          ║
-║                    INSTALLER                            ║
+║                    EJ-VPS MONITOR                       ║
+║                      INSTALLER                          ║
 ║                                                          ║
 ╚══════════════════════════════════════════════════════════╝
 EOF
 echo -e "${RESET}"
-echo -e "${CYAN}Installing directly from GitHub...${RESET}"
-echo
 
 echo -e "${CYAN}[1/7] Checking GitHub files...${RESET}"
 for f in menu.sh monitor.sh telegram.sh servers.conf.example; do
-    curl -fsSI --max-time 15 "$RAW/$f" >/dev/null || die "Cannot access GitHub file: $f"
+    curl -fsSL --max-time 15 -o /dev/null "$RAW/$f" || die "Cannot access GitHub file: $f"
 done
 echo -e "${GREEN}✓ GitHub repository reachable${RESET}"
 
 echo
 echo -e "${CYAN}╔══════════════════════════════════════════════════════════╗"
-echo -e "║                 TELEGRAM BOT TOKEN                     ║"
+echo -e "║                 TELEGRAM BOT TOKEN                      ║"
 echo -e "╚══════════════════════════════════════════════════════════╝${RESET}"
 cat <<'EOF'
 HOW TO GET BOT TOKEN
 
 1. Open Telegram.
 2. Search @BotFather.
-3. Send /newbot.
-4. Follow the instructions.
-5. Copy the Bot Token.
+3. Open the official BotFather.
+4. Send /newbot.
+5. Follow the instructions.
+6. Copy the Bot Token given by BotFather.
 
 Example:
 123456789:AAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -84,16 +74,22 @@ read -rp "Press ENTER to continue..." _
 
 while true; do
     echo
-    read -rsp "Telegram Bot Token: " BOT_TOKEN
+    read -rsp "Enter Telegram Bot Token: " BOT_TOKEN
     echo
-    [[ -n "$BOT_TOKEN" ]] || { echo -e "${RED}✗ Token cannot be empty.${RESET}"; continue; }
+
+    [[ -n "$BOT_TOKEN" ]] || {
+        echo -e "${RED}✗ Token cannot be empty.${RESET}"
+        continue
+    }
 
     RESULT="$(curl -fsS --max-time 10 "https://api.telegram.org/bot${BOT_TOKEN}/getMe" 2>/dev/null || true)"
+
     if echo "$RESULT" | python3 -c 'import sys,json; d=json.load(sys.stdin); raise SystemExit(0 if d.get("ok") else 1)' 2>/dev/null; then
         BOT_NAME="$(echo "$RESULT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["result"]["username"])')"
-        echo -e "${GREEN}✓ Bot token valid: @${BOT_NAME}${RESET}"
+        echo -e "${GREEN}✓ Bot Token valid: @${BOT_NAME}${RESET}"
         break
     fi
+
     echo -e "${RED}✗ Invalid Bot Token. Try again.${RESET}"
 done
 
@@ -105,12 +101,13 @@ cat <<'EOF'
 ╚══════════════════════════════════════════════════════════╝
 EOF
 echo -e "${RESET}"
+
 cat <<'EOF'
 HOW TO GET CHAT ID
 
-1. Open your VPS Monitor bot.
-2. Send /start.
-3. Open:
+1. Open your VPS Monitor bot in Telegram.
+2. Send /start to the bot.
+3. Open this URL in your browser:
 
 https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates
 
@@ -118,23 +115,28 @@ https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates
 
 "chat":{"id":123456789
 
-5. The number after "id" is your Chat ID.
+5. The number after "id" is your Telegram Chat ID.
 
 Example:
 8474044977
+
+You can also use a Telegram ID bot to find your personal Chat ID.
 EOF
+
 echo
 read -rp "Press ENTER to continue..." _
 
 while true; do
     echo
-    read -rp "Telegram Chat ID: " CHAT_ID
+    read -rp "Enter Telegram Chat ID: " CHAT_ID
+
     [[ "$CHAT_ID" =~ ^-?[0-9]+$ ]] || {
         echo -e "${RED}✗ Chat ID must be numeric.${RESET}"
         continue
     }
 
-    TEST="$(curl -fsS --max-time 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+    TEST="$(curl -fsS --max-time 10 -X POST \
+        "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
         --data-urlencode "chat_id=${CHAT_ID}" \
         --data-urlencode "text=🚀 EJ-VPS Monitor installer test: Telegram is connected." \
         2>/dev/null || true)"
@@ -143,7 +145,8 @@ while true; do
         echo -e "${GREEN}✓ Chat ID valid. Test message sent.${RESET}"
         break
     fi
-    echo -e "${RED}✗ Could not send to this Chat ID. Send /start first and verify the ID.${RESET}"
+
+    echo -e "${RED}✗ Cannot send to this Chat ID. Send /start first and verify the ID.${RESET}"
 done
 
 echo
@@ -152,36 +155,41 @@ mkdir -p "$BASE"
 chmod 700 "$BASE"
 
 echo -e "${CYAN}[4/7] Downloading application files from GitHub...${RESET}"
-download() {
+
+download_file() {
     local file="$1"
     echo -e "  ${CYAN}→${RESET} $file"
     curl -fsSL --retry 3 --max-time 30 "$RAW/$file" -o "$BASE/$file"
     chmod 700 "$BASE/$file"
 }
-download menu.sh
-download monitor.sh
-download telegram.sh
-download servers.conf.example
 
-# Create local configuration; this is intentionally never downloaded from GitHub.
+download_file menu.sh
+download_file monitor.sh
+download_file telegram.sh
+
+# Example only; the real server list is kept locally and is never overwritten.
+download_file servers.conf.example
+
+# Local configuration. Real token/chat ID never goes to GitHub.
 cat > "$BASE/config.sh" <<EOF
 BOT_TOKEN='$BOT_TOKEN'
 CHAT_ID='$CHAT_ID'
 CHECK_INTERVAL=30
 EOF
-chmod 700 "$BASE/config.sh"
+chmod 600 "$BASE/config.sh"
 
-# Create the local VPS database only if it does not already exist.
+# Preserve an existing VPS list during reinstall/update.
 if [[ ! -f "$BASE/servers.conf" ]]; then
     cat > "$BASE/servers.conf" <<'EOF'
 # NAME|HOST|PORT|METHOD
 EOF
-    chmod 600 "$BASE/servers.conf"
 fi
+chmod 600 "$BASE/servers.conf"
 
-echo -e "${GREEN}✓ Application files downloaded from GitHub${RESET}"
+echo -e "${GREEN}✓ Files installed from GitHub${RESET}"
 
 echo -e "${CYAN}[5/7] Installing systemd service...${RESET}"
+
 cat > /etc/systemd/system/vps-monitor.service <<EOF
 [Unit]
 Description=EJ-VPS Telegram Monitor
@@ -203,54 +211,66 @@ systemctl daemon-reload
 systemctl enable vps-monitor >/dev/null
 systemctl restart vps-monitor
 
-echo -e "${GREEN}✓ Service installed and started${RESET}"
+echo -e "${GREEN}✓ VPS Monitor service started${RESET}"
 
-echo -e "${CYAN}[6/7] Installing SSH menu command...${RESET}"
+echo -e "${CYAN}[6/7] Installing SSH auto-menu...${RESET}"
+
 ln -sf "$BASE/menu.sh" /usr/local/bin/vps
 chmod +x /usr/local/bin/vps
 
-# Remove old auto-menu block if present, then add the current one.
+# Remove our previous auto-menu blocks, if any.
 if [[ -f /root/.bashrc ]]; then
     sed -i '/# EJ-VPS-MONITOR-AUTO-MENU/,/# END-EJ-VPS-MONITOR-AUTO-MENU/d' /root/.bashrc
 fi
+
+# Preserve existing /root/.bashrc and append only our marked block.
 cat >> /root/.bashrc <<'EOF'
 
 # EJ-VPS-MONITOR-AUTO-MENU
-if [ -t 1 ] && [ -x /usr/local/bin/vps ] && [ -z "$EJ_VPS_MONITOR_MENU" ]; then
-  export EJ_VPS_MONITOR_MENU=1
-  /usr/local/bin/vps
+if [ -t 0 ] && [ -t 1 ] && [ -x /usr/local/bin/vps ] && [ -z "${EJ_VPS_MONITOR_MENU:-}" ]; then
+    export EJ_VPS_MONITOR_MENU=1
+    clear
+    /usr/local/bin/vps
 fi
 # END-EJ-VPS-MONITOR-AUTO-MENU
 EOF
 
-echo -e "${CYAN}[7/7] Final test...${RESET}"
-"$BASE/telegram.sh" send "🚀 EJ-VPS MONITOR STARTED
+# SSH login shells may read .bash_profile instead of .bashrc.
+# Preserve an existing .bash_profile and add a marked loader.
+touch /root/.bash_profile
+sed -i '/# EJ-VPS-MONITOR-BASH-PROFILE/,/# END-EJ-VPS-MONITOR-BASH-PROFILE/d' /root/.bash_profile
 
-🖥 Server: $(hostname)
+cat >> /root/.bash_profile <<'EOF'
+
+# EJ-VPS-MONITOR-BASH-PROFILE
+if [ -f ~/.bashrc ]; then
+    . ~/.bashrc
+fi
+# END-EJ-VPS-MONITOR-BASH-PROFILE
+EOF
+
+echo -e "${GREEN}✓ SSH auto-menu enabled${RESET}"
+
+echo -e "${CYAN}[7/7] Sending Telegram startup alert...${RESET}"
+"$BASE/telegram.sh" send "🚨 VPS MONITOR STARTED
+
+🖥 Monitor: $(hostname)
 🟢 Status: ONLINE
 📡 Telegram: Connected" >/dev/null 2>&1 || true
 
-# Make sure no installer copy is left in the current directory/root home.
-if [[ "$INSTALLER_PATH" != "$BASE/installer.sh" ]]; then
+# Remove the temporary installer BEFORE opening the menu.
+# The installed scripts/config remain in /opt/vps-monitor.
+if [[ -f "$INSTALLER_PATH" && "$INSTALLER_PATH" != "$BASE/installer.sh" ]]; then
     rm -f -- "$INSTALLER_PATH"
 fi
 
-echo
-echo -e "${GREEN}"
-cat <<'EOF'
-╔══════════════════════════════════════════════════════════╗
-║                                                          ║
-║              INSTALLATION COMPLETE                     ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
-EOF
-echo -e "${RESET}"
-echo -e "${CYAN}Menu:${RESET}      vps"
-echo -e "${CYAN}Config:${RESET}    $BASE/config.sh"
-echo -e "${CYAN}VPS list:${RESET}  $BASE/servers.conf"
-echo -e "${CYAN}Service:${RESET}   systemctl status vps-monitor"
-echo -e "${CYAN}Logs:${RESET}      journalctl -u vps-monitor -f"
-echo
-echo -e "${GREEN}Temporary installer file will be removed automatically.${RESET}"
-echo -e "${YELLOW}Note: installed shell scripts remain in $BASE because the monitor needs them to run.${RESET}"
-sleep 2
+trap - EXIT
+
+clear
+echo -e "${GREEN}Installation complete. Opening VPS menu...${RESET}"
+sleep 1
+clear
+
+# Start the menu immediately after installation.
+# The menu itself remains installed as /usr/local/bin/vps.
+exec /usr/local/bin/vps
