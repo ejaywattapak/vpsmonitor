@@ -1,0 +1,6 @@
+# NAME|HOST|PORT|METHOD
+# METHOD: ping or tcp
+#
+# Examples:
+# UPCLOUD|127.0.0.1|22|tcp
+# SVR4U|87.76.160.198|0|ping

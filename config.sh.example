@@ -1,0 +1,6 @@
+# VPS Telegram Monitor configuration
+# installer.sh creates /opt/vps-monitor/config.sh from this template.
+
+BOT_TOKEN=''
+CHAT_ID=''
+CHECK_INTERVAL=30
